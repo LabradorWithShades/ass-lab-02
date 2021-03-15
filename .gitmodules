@@ -1,0 +1,3 @@
+[submodule "vm"]
+	path = vm
+	url = https://github.com/LabradorWithShades/ass-lab-vm.git

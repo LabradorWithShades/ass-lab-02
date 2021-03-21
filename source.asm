@@ -1,7 +1,10 @@
 use16
 org 0x100
 
-; Forbid all interrupts
+; Save real mode IDTR
+sidt fword[REAL_IDTR]
+
+; Disable all interrupts
 cli
 
 in  al  , 0x70
@@ -34,11 +37,17 @@ add ax , GDT
 ; Put GDT address in variable
 mov dword[GDTR+2], eax
 
+; Calculate IDT linear address
+xor eax, eax
+mov ax , cs
+shl eax, 0x04
+add ax , IDT
+
+; Put IDT address in variable
+mov dword[IDTR+2], eax
+
 ; Load GDTR register
 lgdt fword[GDTR]
-
-; Save real mode IDTR register
-sidt fword[REAL_IDTR]
 
 ; Load IDTR register
 lidt fword[IDTR]
@@ -63,70 +72,81 @@ GDT:
   GDT_SIZE equ $ - GDT
 
 GDTR:
-  dw GDT_SIZE
+  dw GDT_SIZE - 1
   dd 0x0
-  
-use32
-GP_handler:
-  pop eax ; get error code
-  pusha
-  ; write handler
-  popa
-iretd
-
-MY_handler:
-  ;no error code
-  pusha
-  popa
-iretd
 
 IDT:
-  dq 0x0 ; 0
-  dq 0x0 ; 1
-  dq 0x0 ; 2
-  dq 0x0 ; 3
-  dq 0x0 ; 4
-  dq 0x0 ; 5
-  dq 0x0 ; 6
-  dq 0x0 ; 7
-  dq 0x0 ; 8
-  dq 0x0 ; 9
-  dq 0x0 ; 10
-  dq 0x0 ; 11
-  dq 0x0 ; 12
-    ; handler    seg   PprZDtypRRRrrrrr   
-  dw GP_handler, 0x08, 1000111000000000b, shr GP_handler 16; 13
-  dq 0x0 ; 14
-  dq 0x0 ; 15
-  dq 0x0 ; 16
-  dq 0x0 ; 17
-  dq 0x0 ; 18
-  dq 0x0 ; 19
-  dq 0x0 ; 20
-  dq 0x0 ; 21
-  dq 0x0 ; 22
-  dq 0x0 ; 23
-  dq 0x0 ; 24
-  dq 0x0 ; 25
-  dq 0x0 ; 26
-  dq 0x0 ; 27
-  dq 0x0 ; 28
-  dq 0x0 ; 29
-  dq 0x0 ; 30
-  dq 0x0 ; 31
-  dq 0x0 ; 32
-  dq 0x0 ; 33
-IDT_SIZE: equ $ - IDT
+  dq 0 ; 0
+  dq 0 ; 1
+  dq 0 ; 2
+  dq 0 ; 3
+  dq 0 ; 4
+  dq 0 ; 5
+  dq 0 ; 6
+  dq 0 ; 7
+  dq 0 ; 8
+  dq 0 ; 9
+  dq 0 ; 10
+  dq 0 ; 11
+  dq 0 ; 12
+  dw GP_handler and 0xFFFF, 0x08, 1000111000000000b, GP_handler shr 16; 13
+  dq 0 ; 14
+  dq 0 ; 15
+  dq 0 ; 16
+  dq 0 ; 17
+  dq 0 ; 18
+  dq 0 ; 19
+  dq 0 ; 20
+  dq 0 ; 21
+  dq 0 ; 22
+  dq 0 ; 23
+  dq 0 ; 24
+  dq 0 ; 25
+  dq 0 ; 26
+  dq 0 ; 27
+  dq 0 ; 28
+  dq 0 ; 29
+  dq 0 ; 30
+  dq 0 ; 31
+  dq 0 ; 32
+  dq 0 ; 33
+  dq 0 ; 34
+  dw MY_handler and 0xFFFF, 0x08, 1000111000000000b, MY_handler shr 16 ; 35
+  dq 0 ; 36
+IDT_SIZE equ $ - IDT
 
+IDTR:
+  dw IDT_SIZE - 1
+  dd 0x0
+  
 REAL_IDTR:
   dw 0x0
   dd 0x0
 
-IDTR:
-  dw IDT_SIZE
-  dd 0x0
-
 use32
+
+GP_handler:
+  pop eax ; get error code
+iretd
+
+MY_handler:
+  pusha
+
+  mov ax , 0x18
+  mov es , ax
+  mov edi, 0x02
+
+  mov word[es:edi], 0x2030
+  add edi, 0x02
+  mov word[es:edi], 0x2078
+  add edi, 0x02  
+  mov word[es:edi], 0x2032
+  add edi, 0x02  
+  mov word[es:edi], 0x2033 
+
+  popa
+iretd
+
 PROT_MODE:
 ; Save real mode data/code segment to bx
 mov bx, ds
@@ -140,44 +160,30 @@ mov ds, ax
 mov ax, 0x18
 mov es, ax
 
-mov esi, 0xFFFFFFF0
-xor edi, edi
+; Enable all interrupts
+sti
 
-mov ecx, 0x10
-print_loop:
-	mov al, byte[ds:esi]
-	shr al, 0x04
-	and al, 0x0f
-	cmp al, 0x0a
-	jl out_1
-	add al, 0x07
-	out_1:
-	add al, 0x30
-	mov byte[es:edi], al
-	inc edi
-	mov byte[es:edi], 0x02
-	inc edi	
+in  al  , 0x70
+and al  , 0x7F
+out 0x70, al
 
-	; Print 2nd digit
-	mov al, byte[ds:esi]
-	and al, 0x0f
-	cmp al, 0x0a
-	jl out_2
-	add al, 0x07
-	out_2:
-	add al, 0x30
-	mov byte[es:edi], al
-	inc edi
-	mov byte[es:edi], 0x02
-	
-	add edi, 0x3
-	inc esi
-loop print_loop
+int 0x23
+
+; Disable all interrupts
+cli
+
+in  al  , 0x70
+or  al  , 0x80
+out 0x70, al
 
 ; Jump to 16-bit code
 jmp 0x20:next
 next:
 use16
+
+; Restore IDTR
+lidt fword[cs:REAL_IDTR]
+
 ; Switch back to real mode
 mov eax, cr0
 and al, 11111110b
@@ -191,10 +197,7 @@ dw 0x00 ; SELECTOR
 
 use16
 REAL_MODE:
-; Restore idtr register
-lidt fword[REAL_IDTR]
-
-; Allow all interrupts
+; Enable all interrupts
 sti
 
 in  al  , 0x70
